@@ -10,4 +10,5 @@ type role
 type permission
   relations
     define role: [role]
-    define can_access: assignee from role
+    define parent: [permission]
+    define can_access: assignee from role or can_access from parent
