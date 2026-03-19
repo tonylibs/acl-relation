@@ -1,0 +1,13 @@
+model
+  schema 1.1
+
+type user
+
+type role
+  relations
+    define assignee: [user]
+
+type permission
+  relations
+    define role: [role]
+    define can_access: assignee from role
