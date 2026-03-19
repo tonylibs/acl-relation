@@ -1,0 +1,20 @@
+{
+  "name": "acl-relation",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:37373/git/tonylibs/acl-relation"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@openfga/sdk": "^0.9.3",
+    "vitest": "^4.1.0"
+  }
+}
