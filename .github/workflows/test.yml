@@ -10,26 +10,21 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    services:
-      openfga:
-        image: openfga/openfga
-        args: run
-        ports:
-          - 8080:8080
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install FGA CLI
+      - name: Start OpenFGA
         run: |
-          curl -fsSL https://raw.githubusercontent.com/openfga/cli/main/install.sh | bash
-
-      - name: Wait for OpenFGA to be ready
-        run: |
-          for i in $(seq 1 10); do
+          docker run -d --name openfga -p 8080:8080 openfga/openfga run
+          for i in $(seq 1 15); do
             curl -sf http://localhost:8080/healthz && break
             sleep 2
           done
+
+      - name: Install FGA CLI
+        uses: jaxxstorm/action-install-gh-release@v1.14.0
+        with:
+          repo: openfga/cli
 
       - name: Create store and import model
         id: fga-setup
