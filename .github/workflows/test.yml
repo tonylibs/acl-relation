@@ -1,0 +1,55 @@
+name: Test ACL Model
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      openfga:
+        image: openfga/openfga
+        args: run
+        ports:
+          - 8080:8080
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install FGA CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/openfga/cli/main/install.sh | bash
+
+      - name: Wait for OpenFGA to be ready
+        run: |
+          for i in $(seq 1 10); do
+            curl -sf http://localhost:8080/healthz && break
+            sleep 2
+          done
+
+      - name: Create store and import model
+        id: fga-setup
+        run: |
+          RESULT=$(fga store create --api-url http://localhost:8080 --model model.fga)
+          echo "$RESULT"
+          STORE_ID=$(echo "$RESULT" | jq -r '.store.id')
+          MODEL_ID=$(echo "$RESULT" | jq -r '.model.authorization_model_id')
+          echo "store_id=$STORE_ID" >> "$GITHUB_OUTPUT"
+          echo "model_id=$MODEL_ID" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - name: Run tests
+        env:
+          FGA_API_URL: http://localhost:8080
+          FGA_STORE_ID: ${{ steps.fga-setup.outputs.store_id }}
+          FGA_MODEL_ID: ${{ steps.fga-setup.outputs.model_id }}
+        run: npm test

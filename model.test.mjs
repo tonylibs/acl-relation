@@ -2,62 +2,32 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { OpenFgaClient } from "@openfga/sdk";
 
 const FGA_API_URL = process.env.FGA_API_URL || "http://localhost:8080";
-
-function createModelRequest() {
-  return {
-    schema_version: "1.1",
-    type_definitions: [
-      { type: "user" },
-      {
-        type: "role",
-        relations: {
-          assignee: { this: {} },
-        },
-        metadata: {
-          relations: {
-            assignee: {
-              directly_related_user_types: [{ type: "user" }],
-            },
-          },
-        },
-      },
-      {
-        type: "permission",
-        relations: {
-          role: { this: {} },
-          can_access: {
-            tupleToUserset: {
-              tupleset: { object: "", relation: "role" },
-              computedUserset: { object: "", relation: "assignee" },
-            },
-          },
-        },
-        metadata: {
-          relations: {
-            role: {
-              directly_related_user_types: [{ type: "role" }],
-            },
-          },
-        },
-      },
-    ],
-  };
-}
+const FGA_STORE_ID = process.env.FGA_STORE_ID;
+const FGA_MODEL_ID = process.env.FGA_MODEL_ID;
 
 describe("ACL Authorization Model", () => {
   let fgaClient;
 
   beforeAll(async () => {
-    fgaClient = new OpenFgaClient({ apiUrl: FGA_API_URL });
+    if (FGA_STORE_ID) {
+      fgaClient = new OpenFgaClient({
+        apiUrl: FGA_API_URL,
+        storeId: FGA_STORE_ID,
+        authorizationModelId: FGA_MODEL_ID,
+      });
+    } else {
+      fgaClient = new OpenFgaClient({ apiUrl: FGA_API_URL });
+      const { id: storeId } = await fgaClient.createStore({
+        name: "acl-test-store",
+      });
+      fgaClient.storeId = storeId;
 
-    const { id: storeId } = await fgaClient.createStore({
-      name: "acl-test-store",
-    });
-    fgaClient.storeId = storeId;
-
-    const { authorization_model_id } =
-      await fgaClient.writeAuthorizationModel(createModelRequest());
-    fgaClient.authorizationModelId = authorization_model_id;
+      const { authorization_model_id } =
+        await fgaClient.writeAuthorizationModel(
+          (await import("./model.json", { with: { type: "json" } })).default,
+        );
+      fgaClient.authorizationModelId = authorization_model_id;
+    }
   });
 
   it("should allow access when user is assigned to a role that has the permission", async () => {
