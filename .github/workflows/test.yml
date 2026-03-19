@@ -13,7 +13,6 @@ jobs:
     services:
       openfga:
         image: openfga/openfga
-        args: run
         ports:
           - 8080:8080
 
