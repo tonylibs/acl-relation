@@ -123,6 +123,25 @@ describe("ACL Authorization Model", () => {
     expect(allowed).toBe(false);
   });
 
+  it("should allow access to product:view when user has product:create via parent relation", async () => {
+    await fgaClient.write({
+      writes: [
+        { user: "permission:product_create", relation: "parent", object: "permission:product_view" },
+        { user: "role:creator", relation: "role", object: "permission:product_create" },
+        { user: "user:grace", relation: "assignee", object: "role:creator" },
+      ],
+    });
+
+    // grace has product_create, which should imply product_view
+    const [canCreate, canView] = await Promise.all([
+      fgaClient.check({ user: "user:grace", relation: "can_access", object: "permission:product_create" }),
+      fgaClient.check({ user: "user:grace", relation: "can_access", object: "permission:product_view" }),
+    ]);
+
+    expect(canCreate.allowed).toBe(true);
+    expect(canView.allowed).toBe(true);
+  });
+
   it("should not leak permissions between different roles", async () => {
     // charlie is in role:viewer which has product_view but NOT category_delete
     const { allowed } = await fgaClient.check({
