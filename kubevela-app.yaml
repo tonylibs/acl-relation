@@ -97,7 +97,7 @@ spec:
           properties:
             replicas: 1
 
-    # --- ConfigMap with the authorization model JSON ---
+    # --- ConfigMap with the authorization model DSL ---
     - name: openfga-model-config
       type: k8s-objects
       properties:
@@ -107,85 +107,23 @@ spec:
             metadata:
               name: openfga-model
             data:
-              model.json: |
-                {
-                  "schema_version": "1.1",
-                  "type_definitions": [
-                    {
-                      "type": "user"
-                    },
-                    {
-                      "type": "role",
-                      "relations": {
-                        "assignee": {
-                          "this": {}
-                        }
-                      },
-                      "metadata": {
-                        "relations": {
-                          "assignee": {
-                            "directly_related_user_types": [
-                              { "type": "user" }
-                            ]
-                          }
-                        }
-                      }
-                    },
-                    {
-                      "type": "permission",
-                      "relations": {
-                        "role": {
-                          "this": {}
-                        },
-                        "parent": {
-                          "this": {}
-                        },
-                        "can_access": {
-                          "union": {
-                            "child": [
-                              {
-                                "tupleToUserset": {
-                                  "tupleset": {
-                                    "relation": "role"
-                                  },
-                                  "computedUserset": {
-                                    "relation": "assignee"
-                                  }
-                                }
-                              },
-                              {
-                                "tupleToUserset": {
-                                  "tupleset": {
-                                    "relation": "parent"
-                                  },
-                                  "computedUserset": {
-                                    "relation": "can_access"
-                                  }
-                                }
-                              }
-                            ]
-                          }
-                        }
-                      },
-                      "metadata": {
-                        "relations": {
-                          "role": {
-                            "directly_related_user_types": [
-                              { "type": "role" }
-                            ]
-                          },
-                          "parent": {
-                            "directly_related_user_types": [
-                              { "type": "permission" }
-                            ]
-                          }
-                        }
-                      }
-                    }
-                  ]
-                }
+              model.fga: |
+                model
+                  schema 1.1
 
-    # --- Job to create a store and write the authorization model ---
+                type user
+
+                type role
+                  relations
+                    define assignee: [user]
+
+                type permission
+                  relations
+                    define role: [role]
+                    define parent: [permission]
+                    define can_access: assignee from role or can_access from parent
+
+    # --- Job to create a store and write the authorization model via FGA CLI ---
     - name: openfga-write-schema
       type: k8s-objects
       dependsOn:
@@ -208,53 +146,30 @@ spec:
                         name: openfga-model
                   containers:
                     - name: write-schema
-                      image: curlimages/curl:latest
+                      image: openfga/cli:latest
                       volumeMounts:
                         - name: model-config
                           mountPath: /config
+                      env:
+                        - name: FGA_API_URL
+                          value: http://openfga:8080
                       command:
                         - sh
                         - -c
                         - |
                           set -e
-                          OPENFGA_API_URL="http://openfga:8080"
 
                           echo "Waiting for OpenFGA to be ready..."
-                          until curl -sf "${OPENFGA_API_URL}/healthz" > /dev/null 2>&1; do
+                          until fga store list 2>/dev/null; do
                             echo "  OpenFGA not ready, retrying in 3s..."
                             sleep 3
                           done
                           echo "OpenFGA is ready."
 
-                          echo "Creating store..."
-                          STORE_RESPONSE=$(curl -sf -X POST "${OPENFGA_API_URL}/stores" \
-                            -H "Content-Type: application/json" \
-                            -d '{"name": "acl-store"}')
+                          echo "Creating store and writing model..."
+                          fga store create --name acl-store --model /config/model.fga
 
-                          STORE_ID=$(echo "${STORE_RESPONSE}" | sed 's/.*"id":"\([^"]*\)".*/\1/')
-
-                          if [ -z "${STORE_ID}" ]; then
-                            echo "ERROR: Failed to create store. Response: ${STORE_RESPONSE}"
-                            exit 1
-                          fi
-                          echo "Store created: ${STORE_ID}"
-
-                          echo "Writing authorization model..."
-                          MODEL_RESPONSE=$(curl -sf -X POST \
-                            "${OPENFGA_API_URL}/stores/${STORE_ID}/authorization-models" \
-                            -H "Content-Type: application/json" \
-                            -d @/config/model.json)
-
-                          MODEL_ID=$(echo "${MODEL_RESPONSE}" | sed 's/.*"authorization_model_id":"\([^"]*\)".*/\1/')
-
-                          if [ -z "${MODEL_ID}" ]; then
-                            echo "ERROR: Failed to write model. Response: ${MODEL_RESPONSE}"
-                            exit 1
-                          fi
-
-                          echo "Authorization model written successfully."
-                          echo "  Store ID: ${STORE_ID}"
-                          echo "  Model ID: ${MODEL_ID}"
+                          echo "Store created and authorization model written successfully."
 
   # --- Workflow: ensure ordered deployment ---
   workflow:
