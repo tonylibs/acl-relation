@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user"
+    },
+    {
+      "type": "role",
+      "relations": {
+        "assignee": {
+          "this": {}
+        }
+      },
+      "metadata": {
+        "relations": {
+          "assignee": {
+            "directly_related_user_types": [
+              { "type": "user" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "permission",
+      "relations": {
+        "role": {
+          "this": {}
+        },
+        "parent": {
+          "this": {}
+        },
+        "can_access": {
+          "union": {
+            "child": [
+              {
+                "tupleToUserset": {
+                  "tupleset": {
+                    "relation": "role"
+                  },
+                  "computedUserset": {
+                    "relation": "assignee"
+                  }
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "tupleset": {
+                    "relation": "parent"
+                  },
+                  "computedUserset": {
+                    "relation": "can_access"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "role": {
+            "directly_related_user_types": [
+              { "type": "role" }
+            ]
+          },
+          "parent": {
+            "directly_related_user_types": [
+              { "type": "permission" }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
