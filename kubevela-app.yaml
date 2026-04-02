@@ -21,9 +21,15 @@ spec:
             waitForMigrations: true
           postgresql:
             enabled: true
+            image:
+              repository: bitnami/postgresql
+              tag: "latest"
             auth:
               postgresPassword: openfga
               database: openfga
+            primary:
+              persistence:
+                enabled: false
           playground:
             enabled: true
 
@@ -83,23 +89,13 @@ spec:
                       env:
                         - name: FGA_API_URL
                           value: http://openfga:8080
-                      command:
-                        - sh
-                        - -c
-                        - |
-                          set -e
-
-                          echo "Waiting for OpenFGA to be ready..."
-                          until fga store list 2>/dev/null; do
-                            echo "  OpenFGA not ready, retrying in 3s..."
-                            sleep 3
-                          done
-                          echo "OpenFGA is ready."
-
-                          echo "Creating store and writing model..."
-                          fga store create --name acl-store --model /config/model.fga
-
-                          echo "Store created and authorization model written successfully."
+                      args:
+                        - store
+                        - create
+                        - --name
+                        - acl-store
+                        - --model
+                        - /config/model.fga
 
   # --- Workflow: ensure ordered deployment ---
   workflow:
