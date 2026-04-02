@@ -1,0 +1,120 @@
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: openfga
+  namespace: default
+spec:
+  components:
+    # --- OpenFGA via Helm chart (includes PostgreSQL sub-chart and migrations) ---
+    - name: openfga
+      type: helm
+      properties:
+        repoType: helm
+        url: https://openfga.github.io/helm-charts
+        chart: openfga
+        values:
+          replicaCount: 1
+          datastore:
+            engine: postgres
+            uri: postgres://postgres:openfga@openfga-postgresql:5432/openfga?sslmode=disable
+            applyMigrations: true
+            waitForMigrations: true
+          postgresql:
+            enabled: true
+            image:
+              repository: bitnami/postgresql
+              tag: "latest"
+            auth:
+              postgresPassword: openfga
+              database: openfga
+            primary:
+              persistence:
+                enabled: false
+          playground:
+            enabled: true
+
+    # --- ConfigMap with the authorization model DSL ---
+    - name: openfga-model-config
+      type: k8s-objects
+      properties:
+        objects:
+          - apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: openfga-model
+            data:
+              model.fga: |
+                model
+                  schema 1.1
+
+                type user
+
+                type role
+                  relations
+                    define assignee: [user]
+
+                type permission
+                  relations
+                    define role: [role]
+                    define parent: [permission]
+                    define can_access: assignee from role or can_access from parent
+
+    # --- Job to create a store and write the authorization model via FGA CLI ---
+    - name: openfga-write-schema
+      type: k8s-objects
+      dependsOn:
+        - openfga
+        - openfga-model-config
+      properties:
+        objects:
+          - apiVersion: batch/v1
+            kind: Job
+            metadata:
+              name: openfga-write-schema
+            spec:
+              backoffLimit: 3
+              template:
+                spec:
+                  restartPolicy: OnFailure
+                  volumes:
+                    - name: model-config
+                      configMap:
+                        name: openfga-model
+                  containers:
+                    - name: write-schema
+                      image: openfga/cli:latest
+                      volumeMounts:
+                        - name: model-config
+                          mountPath: /config
+                      env:
+                        - name: FGA_API_URL
+                          value: http://openfga:8080
+                      args:
+                        - store
+                        - create
+                        - --name
+                        - acl-store
+                        - --model
+                        - /config/model.fga
+
+  # --- Workflow: ensure ordered deployment ---
+  workflow:
+    steps:
+      - name: deploy-openfga
+        type: apply-component
+        properties:
+          component: openfga
+
+      - name: deploy-model-config
+        type: apply-component
+        dependsOn:
+          - deploy-openfga
+        properties:
+          component: openfga-model-config
+
+      - name: write-schema
+        type: apply-component
+        dependsOn:
+          - deploy-model-config
+        properties:
+          component: openfga-write-schema
