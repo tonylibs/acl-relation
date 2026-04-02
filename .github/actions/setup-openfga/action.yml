@@ -1,0 +1,45 @@
+name: Setup OpenFGA
+description: Start OpenFGA, create store, import model, and install Node.js dependencies
+
+outputs:
+  store_id:
+    description: The OpenFGA store ID
+    value: ${{ steps.fga-setup.outputs.store_id }}
+  model_id:
+    description: The OpenFGA authorization model ID
+    value: ${{ steps.fga-setup.outputs.model_id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Start OpenFGA
+      shell: bash
+      run: |
+        docker run -d --name openfga -p 8080:8080 openfga/openfga run
+        for i in $(seq 1 15); do
+          curl -sf http://localhost:8080/healthz && break
+          sleep 2
+        done
+
+    - name: Install FGA CLI
+      uses: jaxxstorm/action-install-gh-release@v1.14.0
+      with:
+        repo: openfga/cli
+
+    - name: Create store and import model
+      id: fga-setup
+      shell: bash
+      run: |
+        RESULT=$(fga store create --api-url http://localhost:8080 --model model.fga)
+        echo "$RESULT"
+        STORE_ID=$(echo "$RESULT" | jq -r '.store.id')
+        MODEL_ID=$(echo "$RESULT" | jq -r '.model.authorization_model_id')
+        echo "store_id=$STORE_ID" >> "$GITHUB_OUTPUT"
+        echo "model_id=$MODEL_ID" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - shell: bash
+      run: npm ci

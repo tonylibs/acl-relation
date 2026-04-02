@@ -7,51 +7,36 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  unit-test:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Start OpenFGA
-        run: |
-          docker run -d --name openfga -p 8080:8080 openfga/openfga run
-          for i in $(seq 1 15); do
-            curl -sf http://localhost:8080/healthz && break
-            sleep 2
-          done
-
-      - name: Install FGA CLI
-        uses: jaxxstorm/action-install-gh-release@v1.14.0
-        with:
-          repo: openfga/cli
-
-      - name: Create store and import model
-        id: fga-setup
-        run: |
-          RESULT=$(fga store create --api-url http://localhost:8080 --model model.fga)
-          echo "$RESULT"
-          STORE_ID=$(echo "$RESULT" | jq -r '.store.id')
-          MODEL_ID=$(echo "$RESULT" | jq -r '.model.authorization_model_id')
-          echo "store_id=$STORE_ID" >> "$GITHUB_OUTPUT"
-          echo "model_id=$MODEL_ID" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - run: npm ci
+      - name: Setup OpenFGA
+        id: setup
+        uses: ./.github/actions/setup-openfga
 
       - name: Run unit tests
         env:
           FGA_API_URL: http://localhost:8080
-          FGA_STORE_ID: ${{ steps.fga-setup.outputs.store_id }}
-          FGA_MODEL_ID: ${{ steps.fga-setup.outputs.model_id }}
+          FGA_STORE_ID: ${{ steps.setup.outputs.store_id }}
+          FGA_MODEL_ID: ${{ steps.setup.outputs.model_id }}
         run: npm test
+
+  bdd-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup OpenFGA
+        id: setup
+        uses: ./.github/actions/setup-openfga
 
       - name: Run BDD tests
         env:
           FGA_API_URL: http://localhost:8080
-          FGA_STORE_ID: ${{ steps.fga-setup.outputs.store_id }}
-          FGA_MODEL_ID: ${{ steps.fga-setup.outputs.model_id }}
+          FGA_STORE_ID: ${{ steps.setup.outputs.store_id }}
+          FGA_MODEL_ID: ${{ steps.setup.outputs.model_id }}
         run: npm run test:bdd
