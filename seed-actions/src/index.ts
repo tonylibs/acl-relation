@@ -47,8 +47,8 @@ async function main() {
   const storeId = process.env.FGA_STORE_ID;
   const modelId = process.env.FGA_MODEL_ID;
 
-  if (!storeId) {
-    console.error("FGA_STORE_ID is required");
+  if (!storeId || !modelId) {
+    console.error("FGA_STORE_ID and FGA_MODEL_ID are required");
     process.exit(1);
   }
 

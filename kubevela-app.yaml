@@ -138,8 +138,9 @@ spec:
                       command: ["/bin/sh", "-c"]
                       args:
                         - |
-                          STORE_ID=$(cat /shared/result.json | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
-                          MODEL_ID=$(cat /shared/result.json | grep -o '"authorization_model_id":"[^"]*"' | cut -d'"' -f4)
+                          apk add --no-cache jq
+                          STORE_ID=$(jq -r '.store.id' /shared/result.json)
+                          MODEL_ID=$(jq -r '.model.authorization_model_id' /shared/result.json)
                           echo "Store ID: $STORE_ID"
                           echo "Model ID: $MODEL_ID"
                           kubectl create configmap acl-resource \
