@@ -59,12 +59,42 @@ spec:
                     define parent: [permission]
                     define can_access: assignee from role or can_access from parent
 
-    # --- Job to create a store and write the authorization model via FGA CLI ---
+    # --- RBAC for write-schema Job to create ConfigMaps ---
+    - name: openfga-rbac
+      type: k8s-objects
+      properties:
+        objects:
+          - apiVersion: v1
+            kind: ServiceAccount
+            metadata:
+              name: openfga-schema-writer
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: Role
+            metadata:
+              name: openfga-configmap-creator
+            rules:
+              - apiGroups: [""]
+                resources: ["configmaps"]
+                verbs: ["create", "get"]
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: RoleBinding
+            metadata:
+              name: openfga-schema-writer-binding
+            subjects:
+              - kind: ServiceAccount
+                name: openfga-schema-writer
+            roleRef:
+              kind: Role
+              name: openfga-configmap-creator
+              apiGroup: rbac.authorization.k8s.io
+
+    # --- Job to create a store, write the model, and save IDs to ConfigMap ---
     - name: openfga-write-schema
       type: k8s-objects
       dependsOn:
         - openfga
         - openfga-model-config
+        - openfga-rbac
       properties:
         objects:
           - apiVersion: batch/v1
@@ -75,27 +105,148 @@ spec:
               backoffLimit: 3
               template:
                 spec:
+                  serviceAccountName: openfga-schema-writer
                   restartPolicy: OnFailure
                   volumes:
                     - name: model-config
                       configMap:
                         name: openfga-model
-                  containers:
-                    - name: write-schema
+                    - name: shared
+                      emptyDir: {}
+                  initContainers:
+                    - name: create-store
                       image: openfga/cli:latest
                       volumeMounts:
                         - name: model-config
                           mountPath: /config
+                        - name: shared
+                          mountPath: /shared
                       env:
                         - name: FGA_API_URL
                           value: http://openfga:8080
+                      command: ["/bin/sh", "-c"]
                       args:
-                        - store
-                        - create
-                        - --name
-                        - acl-store
-                        - --model
-                        - /config/model.fga
+                        - |
+                          fga store create --name acl-store --model /config/model.fga > /shared/result.json
+                          cat /shared/result.json
+                  containers:
+                    - name: save-ids
+                      image: bitnami/kubectl:latest
+                      volumeMounts:
+                        - name: shared
+                          mountPath: /shared
+                      command: ["/bin/sh", "-c"]
+                      args:
+                        - |
+                          apk add --no-cache jq
+                          STORE_ID=$(jq -r '.store.id' /shared/result.json)
+                          MODEL_ID=$(jq -r '.model.authorization_model_id' /shared/result.json)
+                          echo "Store ID: $STORE_ID"
+                          echo "Model ID: $MODEL_ID"
+                          kubectl create configmap acl-resource \
+                            --from-literal=FGA_STORE_ID="$STORE_ID" \
+                            --from-literal=FGA_MODEL_ID="$MODEL_ID" \
+                            --from-literal=FGA_API_URL="http://openfga:8080"
+
+    # --- ConfigMap with the actions YAML ---
+    - name: openfga-actions-config
+      type: k8s-objects
+      properties:
+        objects:
+          - apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: openfga-actions
+            data:
+              actions.yaml: |
+                permissions:
+                  - resource: category
+                    actions:
+                      - name: view
+                      - name: create
+                        includes:
+                          - view
+                      - name: edit
+                        includes:
+                          - view
+                      - name: delete
+                        includes:
+                          - create
+                          - edit
+
+                  - resource: invoice
+                    actions:
+                      - name: view
+                      - name: create
+                        includes:
+                          - view
+                      - name: edit
+                        includes:
+                          - view
+                      - name: delete
+                        includes:
+                          - create
+                          - edit
+
+                  - resource: staff
+                    actions:
+                      - name: view
+                      - name: create
+                        includes:
+                          - view
+                      - name: edit
+                        includes:
+                          - view
+                      - name: delete
+                        includes:
+                          - create
+                          - edit
+
+    # --- Job to seed permission tuples from actions.yaml ---
+    - name: openfga-seed-actions
+      type: k8s-objects
+      dependsOn:
+        - openfga-write-schema
+        - openfga-actions-config
+      properties:
+        objects:
+          - apiVersion: batch/v1
+            kind: Job
+            metadata:
+              name: openfga-seed-actions
+            spec:
+              backoffLimit: 3
+              template:
+                spec:
+                  restartPolicy: OnFailure
+                  volumes:
+                    - name: actions-config
+                      configMap:
+                        name: openfga-actions
+                  containers:
+                    - name: seed-actions
+                      image: <your-org>/acl-seed-actions:latest
+                      volumeMounts:
+                        - name: actions-config
+                          mountPath: /config
+                      env:
+                        - name: ACTIONS_CONFIG_PATH
+                          value: /config/actions.yaml
+                        - name: FGA_API_URL
+                          valueFrom:
+                            configMapKeyRef:
+                              name: acl-resource
+                              key: FGA_API_URL
+                        - name: FGA_STORE_ID
+                          valueFrom:
+                            configMapKeyRef:
+                              name: acl-resource
+                              key: FGA_STORE_ID
+                        - name: FGA_MODEL_ID
+                          valueFrom:
+                            configMapKeyRef:
+                              name: acl-resource
+                              key: FGA_MODEL_ID
 
   # --- Workflow: ensure ordered deployment ---
   workflow:
@@ -112,9 +263,31 @@ spec:
         properties:
           component: openfga-model-config
 
+      - name: deploy-rbac
+        type: apply-component
+        dependsOn:
+          - deploy-openfga
+        properties:
+          component: openfga-rbac
+
       - name: write-schema
         type: apply-component
         dependsOn:
           - deploy-model-config
+          - deploy-rbac
         properties:
           component: openfga-write-schema
+
+      - name: deploy-actions-config
+        type: apply-component
+        dependsOn:
+          - write-schema
+        properties:
+          component: openfga-actions-config
+
+      - name: seed-actions
+        type: apply-component
+        dependsOn:
+          - deploy-actions-config
+        properties:
+          component: openfga-seed-actions

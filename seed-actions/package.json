@@ -1,0 +1,19 @@
+{
+  "name": "acl-seed-actions",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@openfga/sdk": "^0.9.3",
+    "yaml": "^2.7.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.0"
+  }
+}
