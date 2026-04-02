@@ -1,0 +1,42 @@
+permissions:
+  - resource: category
+    actions:
+      - name: view
+      - name: create
+        includes:
+          - view
+      - name: edit
+        includes:
+          - view
+      - name: delete
+        includes:
+          - create
+          - edit
+
+  - resource: invoice
+    actions:
+      - name: view
+      - name: create
+        includes:
+          - view
+      - name: edit
+        includes:
+          - view
+      - name: delete
+        includes:
+          - create
+          - edit
+
+  - resource: staff
+    actions:
+      - name: view
+      - name: create
+        includes:
+          - view
+      - name: edit
+        includes:
+          - view
+      - name: delete
+        includes:
+          - create
+          - edit
