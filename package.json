@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:bdd": "cucumber-js"
   },
   "repository": {
     "type": "git",
@@ -14,6 +15,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@cucumber/cucumber": "^12.7.0",
     "@openfga/sdk": "^0.9.3",
     "vitest": "^4.1.0"
   }
